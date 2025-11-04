@@ -43,7 +43,20 @@ function initializeMap() {
             map.setView([latitude, longitude], 13);
             
             // Add user marker
-            addUserMarker(currentUser.username, latitude, longitude, true);
+            if (currentUser.username) {
+                addUserMarker(currentUser.username, latitude, longitude, true);
+            }
+            
+            // If already connected to socket, send location immediately
+            if (socket && socket.connected) {
+                socket.emit('locationUpdate', {
+                    username: currentUser.username,
+                    groupId: currentUser.groupId,
+                    latitude,
+                    longitude
+                });
+                console.log('Sent location from map init:', latitude, longitude);
+            }
         }, (error) => {
             console.error('Error getting location:', error);
             showAlert('Unable to get your location. Please enable location services.', 'danger');
@@ -148,6 +161,19 @@ function connectSocket() {
             username: currentUser.username,
             groupId: currentUser.groupId
         });
+        
+        // Immediately send current location if we have it
+        if (currentUser.location) {
+            setTimeout(() => {
+                socket.emit('locationUpdate', {
+                    username: currentUser.username,
+                    groupId: currentUser.groupId,
+                    latitude: currentUser.location.latitude,
+                    longitude: currentUser.location.longitude
+                });
+                console.log('Sent initial location:', currentUser.location);
+            }, 500); // Small delay to ensure joinGroup completes first
+        }
     });
     
     socket.on('connect_error', (error) => {
