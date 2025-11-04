@@ -102,6 +102,8 @@ function setupEventListeners() {
         showModal('destinationModal');
     });
     
+    document.getElementById('clearDestinationBtn').addEventListener('click', clearDestination);
+    
     document.getElementById('searchDestinationBtn').addEventListener('click', searchDestination);
     
     document.getElementById('confirmDestinationBtn').addEventListener('click', setDestination);
@@ -236,6 +238,14 @@ function connectSocket() {
         if (currentUser.location) {
             calculateRoute();
         }
+        // Show clear button
+        document.getElementById('clearDestinationBtn').style.display = 'block';
+    });
+    
+    socket.on('destinationCleared', () => {
+        console.log('Destination cleared by another member');
+        clearDestinationUI();
+        showAlert('Destination has been cleared', 'info');
     });
     
     socket.on('alert', (alert) => {
@@ -405,12 +415,73 @@ async function setDestination() {
         addDestinationMarker(lat, lng);
         calculateRoute();
         
+        // Show clear button
+        document.getElementById('clearDestinationBtn').style.display = 'block';
+        
         hideModal('destinationModal');
         showAlert('Destination set successfully!', 'success');
     } catch (error) {
         console.error('Error setting destination:', error);
         showAlert('Failed to set destination', 'danger');
     }
+}
+
+async function clearDestination() {
+    if (!currentUser.groupId) {
+        showAlert('You must be in a group to clear destination', 'warning');
+        return;
+    }
+    
+    if (!groupDestination) {
+        showAlert('No destination set', 'info');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/groups/${currentUser.groupId}/destination`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to clear destination');
+        }
+        
+        clearDestinationUI();
+        showAlert('Destination cleared successfully!', 'success');
+    } catch (error) {
+        console.error('Error clearing destination:', error);
+        showAlert('Failed to clear destination', 'danger');
+    }
+}
+
+function clearDestinationUI() {
+    // Clear destination variable
+    groupDestination = null;
+    
+    // Remove destination marker from map
+    if (destinationMarker) {
+        map.removeLayer(destinationMarker);
+        destinationMarker = null;
+    }
+    
+    // Remove route from map
+    if (routeLayer) {
+        map.removeLayer(routeLayer);
+        routeLayer = null;
+    }
+    
+    // Reset destination display
+    const destCard = document.getElementById('destinationCard');
+    destCard.innerHTML = '<p class="no-destination">Set a destination to begin</p>';
+    
+    // Hide clear button
+    document.getElementById('clearDestinationBtn').style.display = 'none';
+    
+    // Reset ETA display
+    document.getElementById('etaDisplay').innerHTML = `
+        <div class="eta-value">--</div>
+        <div class="eta-label">minutes</div>
+    `;
 }
 
 // Location Tracking
@@ -672,6 +743,9 @@ function updateDestinationDisplay(destination) {
         <p><strong>📍 ${destination.address || 'Destination Set'}</strong></p>
         <p><small>${destination.latitude.toFixed(6)}, ${destination.longitude.toFixed(6)}</small></p>
     `;
+    
+    // Show clear button when destination is set
+    document.getElementById('clearDestinationBtn').style.display = 'block';
 }
 
 function updateMembersList(members) {

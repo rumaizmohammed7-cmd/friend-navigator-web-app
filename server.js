@@ -102,6 +102,34 @@ app.post('/api/groups/:groupId/destination', async (req, res) => {
   }
 });
 
+app.delete('/api/groups/:groupId/destination', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    
+    const group = await Group.findOne({ groupId });
+    if (!group) {
+      return res.status(404).json({ error: 'Group not found' });
+    }
+    
+    // Clear destination from group
+    group.destination = null;
+    await group.save();
+    
+    // Clear destination from all users in the group
+    await User.updateMany(
+      { groupId },
+      { $unset: { destination: 1 } }
+    );
+    
+    // Notify all members to clear destination
+    io.to(groupId).emit('destinationCleared');
+    
+    res.json({ message: 'Destination cleared successfully', group });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/users/:groupId', async (req, res) => {
   try {
     const { groupId } = req.params;
