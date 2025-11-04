@@ -3,6 +3,7 @@ const http = require('http');
 const socketIO = require('socket.io');
 const cors = require('cors');
 const path = require('path');
+const mongoose = require('mongoose');
 require('dotenv').config();
 
 const connectDB = require('./config/database');
@@ -25,6 +26,19 @@ const io = socketIO(server, {
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    message: 'Server is running',
+    mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
+  });
+});
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Connect to MongoDB
 connectDB();
@@ -146,47 +160,52 @@ io.on('connection', (socket) => {
   
   // User joins a group
   socket.on('joinGroup', async (data) => {
-    const { username, groupId } = data;
-    socket.join(groupId);
-    
-    // Update or create user
-    let user = await User.findOne({ username, groupId });
-    if (!user) {
-      user = new User({ username, groupId, socketId: socket.id, isOnline: true });
-    } else {
-      user.isOnline = true;
-      user.socketId = socket.id;
-    }
-    await user.save();
-    
-    // Get group information with destination
-    const group = await Group.findOne({ groupId });
-    
-    // Send complete group state to the new joiner
-    const groupUsers = await User.find({ groupId, isOnline: true });
-    
-    // Send group data including destination and all members
-    socket.emit('groupState', {
-      group: group,
-      members: groupUsers,
-      destination: group?.destination || null
-    });
-    
-    // Notify OTHER group members that new user joined
-    socket.to(groupId).emit('userJoined', { username, groupId });
-    
-    // If this user has location, broadcast it to the group
-    if (user.currentLocation && user.currentLocation.latitude) {
-      io.to(groupId).emit('memberLocationUpdate', {
-        username: user.username,
-        latitude: user.currentLocation.latitude,
-        longitude: user.currentLocation.longitude,
-        eta: user.eta,
-        timestamp: user.currentLocation.timestamp
+    try {
+      const { username, groupId } = data;
+      socket.join(groupId);
+      
+      // Update or create user
+      let user = await User.findOne({ username, groupId });
+      if (!user) {
+        user = new User({ username, groupId, socketId: socket.id, isOnline: true });
+      } else {
+        user.isOnline = true;
+        user.socketId = socket.id;
+      }
+      await user.save();
+      
+      // Get group information with destination
+      const group = await Group.findOne({ groupId });
+      
+      // Send complete group state to the new joiner
+      const groupUsers = await User.find({ groupId, isOnline: true });
+      
+      // Send group data including destination and all members
+      socket.emit('groupState', {
+        group: group,
+        members: groupUsers,
+        destination: group?.destination || null
       });
+      
+      // Notify OTHER group members that new user joined
+      socket.to(groupId).emit('userJoined', { username, groupId });
+      
+      // If this user has location, broadcast it to the group
+      if (user.currentLocation && user.currentLocation.latitude) {
+        io.to(groupId).emit('memberLocationUpdate', {
+          username: user.username,
+          latitude: user.currentLocation.latitude,
+          longitude: user.currentLocation.longitude,
+          eta: user.eta,
+          timestamp: user.currentLocation.timestamp
+        });
+      }
+      
+      console.log(`✅ ${username} joined group ${groupId}`);
+    } catch (error) {
+      console.error('Error in joinGroup:', error);
+      socket.emit('error', { message: 'Failed to join group' });
     }
-    
-    console.log(`✅ ${username} joined group ${groupId}`);
   });
   
   // Location update
